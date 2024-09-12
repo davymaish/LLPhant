@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Unit\Chat;
+namespace Tests\Unit\Embeddings\EmbeddingGenerator\Ollama;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
@@ -26,6 +26,26 @@ it('embed a text', function () {
     $generator->client = $client;
 
     expect($generator->embedText('this is the text to embed'))->toBeArray();
+});
+
+it('embed a non UTF8 text', function () {
+    $config = new OllamaConfig();
+    $config->model = 'fake-model';
+    $config->url = 'http://fakeurl';
+    $generator = new OllamaEmbeddingGenerator($config);
+
+    $mock = new MockHandler([
+        new Response(200, [], '{"embedding": [1, 2, 3]}'),
+    ]);
+    $handlerStack = HandlerStack::create($mock);
+    $client = new Client(['handler' => $handlerStack]);
+
+    // override client for test
+    $generator->client = $client;
+
+    $japanese = \mb_convert_encoding('おはよう', 'EUC-JP', 'UTF-8');
+
+    expect($generator->embedText($japanese))->toBeArray();
 });
 
 it('embed a document', function () {

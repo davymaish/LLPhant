@@ -1,6 +1,6 @@
 <?php
 
-namespace LLPhant\Chat;
+namespace LLPhant\Chat\Anthropic;
 
 use Generator;
 use LLPhant\Exception\FormatException;
@@ -12,6 +12,8 @@ use Psr\Http\Message\StreamInterface;
 class AnthropicStreamResponse
 {
     final public const DATA_PREFIX = 'data: ';
+
+    use AnthropicTotalTokensTrait;
 
     public function __construct(protected ResponseInterface $response)
     {
@@ -40,6 +42,8 @@ class AnthropicStreamResponse
 
             $type = $json['type'];
 
+            $this->addUsedTokens($json);
+
             if ($type === 'content_block_delta' && $json['delta']['type'] === 'text_delta') {
                 yield $json['delta']['text'];
             }
@@ -65,5 +69,10 @@ class AnthropicStreamResponse
         }
 
         return $buffer;
+    }
+
+    public function getTotalTokens(): int
+    {
+        return $this->totalTokens;
     }
 }

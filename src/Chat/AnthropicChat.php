@@ -5,6 +5,9 @@ namespace LLPhant\Chat;
 use GuzzleHttp\Client;
 use GuzzleHttp\Psr7\Utils;
 use LLPhant\AnthropicConfig;
+use LLPhant\Chat\Anthropic\AnthropicMessage;
+use LLPhant\Chat\Anthropic\AnthropicStreamResponse;
+use LLPhant\Chat\Anthropic\AnthropicTotalTokensTrait;
 use LLPhant\Chat\FunctionInfo\FunctionFormatter;
 use LLPhant\Chat\FunctionInfo\FunctionInfo;
 use LLPhant\Exception\HttpException;
@@ -33,6 +36,10 @@ class AnthropicChat implements ChatInterface
     private array $tools = [];
 
     public ?FunctionInfo $lastFunctionCalled = null;
+
+    private ?AnthropicStreamResponse $streamResponse = null;
+
+    use AnthropicTotalTokensTrait;
 
     public function __construct(AnthropicConfig $config = new AnthropicConfig())
     {
@@ -70,6 +77,9 @@ class AnthropicChat implements ChatInterface
 
         $result = '';
 
+        /** @var array<string, mixed> $toolsOutput */
+        $toolsOutput = [];
+
         foreach ($responses as $response) {
             if ($response['type'] === 'text') {
                 if ($result !== '') {
@@ -79,9 +89,17 @@ class AnthropicChat implements ChatInterface
             }
 
             if ($response['type'] === 'tool_use') {
-                $this->callFunction($response['name'], $response['input']);
+                /** @var string $toolId */
+                $toolId = $response['id'];
+                $toolsOutput[$toolId] = $this->callFunction($response['name'], $response['input']);
             }
         }
+
+        if ($json['stop_reason'] === 'tool_use') {
+            return $this->generateChat(\array_merge($messages, [AnthropicMessage::fromAssistantAnswer($responses), AnthropicMessage::toolResultMessage($toolsOutput)]));
+        }
+
+        $this->addUsedTokens($json);
 
         return $result;
     }
@@ -95,7 +113,7 @@ class AnthropicChat implements ChatInterface
     {
         $answer = $this->generateChat($messages);
 
-        if ($this->lastFunctionCalled instanceof \LLPhant\Chat\FunctionInfo\FunctionInfo) {
+        if ($this->lastFunctionCalled instanceof FunctionInfo) {
             return $this->lastFunctionCalled;
         }
 
@@ -191,16 +209,16 @@ class AnthropicChat implements ChatInterface
      */
     private function createMessagesArray(array $messages): array
     {
-        $response = [];
+        $messagesArray = [];
 
         foreach ($messages as $msg) {
-            $response[] = [
+            $messagesArray[] = [
                 'role' => $msg->role,
-                'content' => $msg->content,
+                'content' => $this->getContentFrom($msg),
             ];
         }
 
-        return $response;
+        return $messagesArray;
     }
 
     /**
@@ -227,9 +245,9 @@ class AnthropicChat implements ChatInterface
 
     private function decodeStreamOfChat(ResponseInterface $response): StreamInterface
     {
-        $streamResponse = new AnthropicStreamResponse($response);
+        $this->streamResponse = new AnthropicStreamResponse($response);
 
-        return Utils::streamFor($streamResponse->getIterator());
+        return Utils::streamFor($this->streamResponse->getIterator());
     }
 
     /**
@@ -237,11 +255,12 @@ class AnthropicChat implements ChatInterface
      *
      * @throws \Exception
      */
-    private function callFunction(string $functionName, array $arguments): void
+    private function callFunction(string $functionName, array $arguments): mixed
     {
         $functionToCall = $this->getFunctionInfoFromName($functionName);
-        $functionToCall->callWithArguments($arguments);
         $this->lastFunctionCalled = $functionToCall;
+
+        return $functionToCall->callWithArguments($arguments);
     }
 
     private function getFunctionInfoFromName(string $functionName): FunctionInfo
@@ -253,5 +272,22 @@ class AnthropicChat implements ChatInterface
         }
 
         throw new \Exception("AI tried to call $functionName which doesn't exist");
+    }
+
+    /**
+     * @return string|array<string|int, mixed>
+     */
+    private function getContentFrom(Message $msg): string|array
+    {
+        if ($msg instanceof AnthropicMessage) {
+            return $msg->contentsArray;
+        }
+
+        return $msg->content;
+    }
+
+    public function getTotalTokens(): int
+    {
+        return $this->totalTokens + $this->streamResponse?->getTotalTokens();
     }
 }

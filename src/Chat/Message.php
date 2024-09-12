@@ -4,7 +4,7 @@ namespace LLPhant\Chat;
 
 use LLPhant\Chat\Enums\ChatRole;
 
-final class Message
+class Message
 {
     public ChatRole $role;
 
@@ -41,6 +41,15 @@ final class Message
     {
         $message = new self();
         $message->role = ChatRole::Function;
+        $message->content = $content;
+
+        return $message;
+    }
+
+    public static function toolResult(string $content): self
+    {
+        $message = new self();
+        $message->role = ChatRole::Tool;
         $message->content = $content;
 
         return $message;

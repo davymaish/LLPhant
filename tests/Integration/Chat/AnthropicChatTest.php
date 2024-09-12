@@ -11,7 +11,8 @@ use LLPhant\Chat\FunctionInfo\Parameter;
 it('can generate some stuff', function () {
     $chat = new AnthropicChat();
     $response = $chat->generateText('what is one + one?');
-    expect($response)->toBeString()->and($response)->toContain('two');
+    expect($response)->toBeString()->and($response)->toContain('two')
+        ->and($chat->getTotalTokens())->tobeGreaterThan(0);
 });
 
 it('can generate some stuff with a system prompt', function () {
@@ -24,7 +25,8 @@ it('can generate some stuff with a system prompt', function () {
 it('can generate some stuff using a stream', function () {
     $chat = new AnthropicChat();
     $response = $chat->generateStreamOfText('Can you describe the recipe for making carbonara in 5 steps');
-    expect($response->__toString())->toContain('eggs');
+    expect($response->__toString())->toContain('eggs')
+        ->and($chat->getTotalTokens())->toBeGreaterThan(0);
 });
 
 it('can call a function', function () {
@@ -48,5 +50,31 @@ it('can call a function', function () {
     $chat->generateText('Who is Marie Curie in one line? My email is student@foo.com');
 
     expect($mockMailerExample->lastMessage)->toStartWith('The email has been sent to student@foo.com with the subject ')
-        ->and($chat->lastFunctionCalled)->toBe($function);
+        ->and($chat->lastFunctionCalled)->toBe($function)
+        ->and($chat->getTotalTokens())->toBeGreaterThan(0);
+});
+
+it('can use the result of a function', function () {
+    $chat = new AnthropicChat();
+
+    $location = new Parameter('location', 'string', 'the location i.e. the name of the city, the state or province and the nation');
+
+    $weatherExample = new WeatherExample();
+
+    $function = new FunctionInfo(
+        'currentWeatherForLocation',
+        $weatherExample,
+        'returns the current weather in the given location. The result contains the description of the weather plus the current temperature in Celsius',
+        [$location]
+    );
+
+    $chat->addFunction($function);
+    $chat->setSystemMessage('You are an AI that answers to questions about weather in certain locations by calling external services to get the information');
+    $answer = $chat->generateText('What is the weather in Venice?');
+
+    expect($weatherExample->lastMessage)->toContain('Venice')
+        ->and($chat->lastFunctionCalled)->toBe($function)
+        ->and($answer)->toContain('Venice')
+        ->and($answer)->toContain('sunny')
+        ->and($answer)->toContain('26');
 });

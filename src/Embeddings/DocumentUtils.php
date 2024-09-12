@@ -70,4 +70,29 @@ class DocumentUtils
     {
         return explode(' ', $document->content)[0];
     }
+
+    public static function getUtf8Data(Document $document): string
+    {
+        return self::toUtf8($document->formattedContent ?? $document->content);
+    }
+
+    public static function toUtf8(string $string): string
+    {
+        return mb_convert_encoding($string, 'UTF-8');
+    }
+
+    /**
+     * @return array<Document>
+     */
+    public static function documents(string ...$contents): array
+    {
+        $result = [];
+        foreach ($contents as $content) {
+            $newDocument = new Document();
+            $newDocument->content = $content;
+            $result[] = $newDocument;
+        }
+
+        return $result;
+    }
 }
